@@ -129,6 +129,7 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 	conn := redisPool.Get()
 
 	id = req.Id
+
 	req.Id = 0
 	key = toMd5(req.String())
 	req.Id = id
@@ -136,7 +137,7 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 	if CACHE {
 		reply, err = conn.Do("GET", key)
 		if err != nil {
-			log.Printf("redis: %s", err)
+			log.Printf("id: %d redis: %s", id, err)
 			err = nil
 		}
 		if d, ok := reply.([]byte); ok && len(d) > 0 {
@@ -147,13 +148,13 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 			err = w.WriteMsg(m)
 
 			if DEBUG > 0 {
-				log.Printf("redis: HIT %v\n", query)
+				log.Printf("id: %d redis: HIT %v\n", id, query)
 			}
 
 			goto end
 		} else {
 			if DEBUG > 0 {
-				log.Printf("redis: MISS %v\n", query)
+				log.Printf("id: %d redis: MISS %v\n", id, query)
 			}
 		}
 	}
@@ -162,9 +163,9 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		tried = i > 0
 		if DEBUG > 0 {
 			if tried {
-				log.Printf("try: %v %s\n", query, *dns1)
+				log.Printf("id: %d try: %v %s\n", id, query, dns)
 			} else {
-				log.Printf("resolve: %v %s\n", query, *dns1)
+				log.Printf("id: %d resolve: %v %s\n", id, query, dns)
 			}
 		}
 		m, _, err = client.Exchange(req, dns)
@@ -177,33 +178,30 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		if DEBUG > 0 {
 			if tried {
 				if len(m.Answer) == 0 {
-					log.Printf("failed: %v\n", query)
+					log.Printf("id: %d failed: %v\n", id, query)
 				} else {
-					log.Printf("bingo: %v %s\n", query, *dns2)
+					log.Printf("id: %d bingo: %v %s\n", id, query, *dns2)
 				}
 			}
 		}
 		data, err = m.Pack()
 		if err == nil {
 			_, err = w.Write(data)
-			if err != nil {
-				goto end
-			}
-		}
-	}
 
-	if err == nil {
-		if CACHE {
-			m.Id = 0
-			data, _ = m.Pack()
-			_, err = conn.Do("SETEX", key, *expire, data)
-			if err != nil {
-				log.Printf("redis: %s", err)
-				err = nil
-			}
-			m.Id = id
-			if DEBUG > 0 {
-				log.Printf("redis: CACHED %v\n", query)
+			if err == nil {
+				if CACHE {
+					m.Id = 0
+					data, _ = m.Pack()
+					_, err = conn.Do("SETEX", key, *expire, data)
+					if err != nil {
+						log.Printf("id: %d redis: %s", id, err)
+						err = nil
+					}
+					m.Id = id
+					if DEBUG > 0 {
+						log.Printf("id: %d redis: CACHED %v\n", id, query)
+					}
+				}
 			}
 		}
 	}
@@ -216,7 +214,7 @@ end:
 		}
 	}
 	if err != nil {
-		log.Printf("error: %v %s\n", query, err)
+		log.Printf("id: %d error: %v %s\n", id, query, err)
 	}
 
 	if DEBUG > 1 {
