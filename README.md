@@ -5,12 +5,14 @@
 - 采用4个dns地址轮询。
 - dns 请求时，默认 read/write 都为 100ms 超时，实测已经足够，更长时间会导致网页访问变慢。
 - 使用 TCP 做 DNS 解析，转发正常的 UDP 请求。
-- redis 做缓存，默认一小时失效。
+- go-cache 做缓存，默认一小时失效，pure go，无需安装其它组件。
+
+另有使用 redis 做缓存的版本在 redis-cache 分支
 
 依赖的两个库：
 
     go get github.com/miekg/dns
-    go get github.com/garyburd/redigo/redis
+    go get github.com/pmylund/go-cache
 
 跨平台编译后放到了我的 arm 开发板 pcDuino 上，现在又可以作为 DNS服务器 了 ^_^
 
@@ -22,17 +24,15 @@
 
 支持的参数：
 
-    dns1     = flag.String("dns1", "202.102.134.68:53", "remote dns address")
-	dns2     = flag.String("dns2", "202.102.128.68:53", "remote dns address")
-	dns3     = flag.String("dns3", "8.8.8.8:53", "remote dns address")
-	dns4     = flag.String("dns4", "8.8.4.4:53", "remote dns address")
-	local    = flag.String("local", ":53", "local listen address")
-	debug    = flag.Int("debug", 0, "debug level 0 1 2")
-	cache    = flag.Bool("cache", true, "enable redis cache")
-	host     = flag.String("host", ":6379", "redis host")
-	poolSize = flag.Int("pools", 20, "redis pool size")
-	expire   = flag.Int64("expire", 3600, "redis cache expire time")
-	ipv6     = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	dns1   = flag.String("dns1", "202.102.134.68:53", "remote dns address")
+	dns2   = flag.String("dns2", "202.102.128.68:53", "remote dns address")
+	dns3   = flag.String("dns3", "8.8.8.8:53", "remote dns address")
+	dns4   = flag.String("dns4", "8.8.4.4:53", "remote dns address")
+	local  = flag.String("local", ":53", "local listen address")
+	debug  = flag.Int("debug", 0, "debug level 0 1 2")
+	cache  = flag.Bool("cache", true, "enable go-cache")
+	expire = flag.Int64("expire", 3600, "default cache expire time")
+	ipv6   = flag.Bool("6", false, "skip ipv6 record query AAAA")
 
 build 生成 dnsproxy 文件后
 执行：

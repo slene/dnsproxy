@@ -5,25 +5,29 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/garyburd/redigo/redis"
 	"github.com/miekg/dns"
+	goCache "github.com/pmylund/go-cache"
 	"log"
+	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"time"
+	"os/signal"
+	"syscall"
 )
 
 var (
-	dns1     = flag.String("dns1", "202.102.134.68:53", "remote dns address")
-	dns2     = flag.String("dns2", "202.102.128.68:53", "remote dns address")
-	dns3     = flag.String("dns3", "8.8.8.8:53", "remote dns address")
-	dns4     = flag.String("dns4", "8.8.4.4:53", "remote dns address")
-	local    = flag.String("local", ":53", "local listen address")
-	debug    = flag.Int("debug", 0, "debug level 0 1 2")
-	cache    = flag.Bool("cache", true, "enable redis cache")
-	host     = flag.String("host", ":6379", "redis host")
-	poolSize = flag.Int("pools", 20, "redis pool size")
-	expire   = flag.Int64("expire", 3600, "redis cache expire time")
-	ipv6     = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	dns1   = flag.String("dns1", "202.102.134.68:53", "remote dns address")
+	dns2   = flag.String("dns2", "202.102.128.68:53", "remote dns address")
+	dns3   = flag.String("dns3", "8.8.8.8:53", "remote dns address")
+	dns4   = flag.String("dns4", "8.8.4.4:53", "remote dns address")
+	local  = flag.String("local", ":53", "local listen address")
+	debug  = flag.Int("debug", 0, "debug level 0 1 2")
+	cache  = flag.Bool("cache", true, "enable go-cache")
+	expire = flag.Int64("expire", 3600, "default cache expire time")
+	file   = flag.String("file", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "cached file")
+	ipv6   = flag.Bool("6", false, "skip ipv6 record query AAAA")
 
 	client *dns.Client
 
@@ -32,13 +36,40 @@ var (
 
 	DNS []string
 
-	redisPool *redis.Pool
+	conn *goCache.Cache
+
+	saveSig = make(chan os.Signal)
 )
 
 func toMd5(data string) string {
 	m := md5.New()
 	m.Write([]byte(data))
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+func intervalSaveCache() {
+	save := func(){
+		err := conn.SaveFile(*file)
+		if err == nil {
+			log.Printf("cache saved: %s\n", *file)
+		} else {
+			log.Printf("cache save failed: %s, %s\n", *file, err)
+		}
+	}
+	go func() {
+		for {
+			select {
+			case sig := <-saveSig:
+				save()
+				switch sig {
+				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+					os.Exit(0)
+				}
+			case <-time.After(time.Second * 60):
+				save()
+			}
+		}
+	}()
 }
 
 func init() {
@@ -55,19 +86,14 @@ func init() {
 	client.WriteTimeout = 100 * time.Millisecond
 
 	if CACHE {
-		conn, err := redis.Dial("tcp", *host)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		conn.Close()
-
-		redisPool = redis.NewPool(func() (conn redis.Conn, err error) {
-			conn, err = redis.Dial("tcp", *host)
-			return
-		}, *poolSize)
+		conn = goCache.New(time.Second*time.Duration(*expire), time.Second*60)
+		conn.LoadFile(*file)
+		intervalSaveCache()
 	}
 
 	DNS = []string{*dns1, *dns2, *dns3, *dns4}
+
+	signal.Notify(saveSig, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 }
 
 func main() {
@@ -98,7 +124,7 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		id        uint16
 		query     []string
 		questions []dns.Question
-		reply     interface{}
+		used      string
 	)
 
 	defer func() {
@@ -126,8 +152,6 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 
 	req.Question = questions
 
-	conn := redisPool.Get()
-
 	id = req.Id
 
 	req.Id = 0
@@ -135,26 +159,23 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 	req.Id = id
 
 	if CACHE {
-		reply, err = conn.Do("GET", key)
-		if err != nil {
-			log.Printf("id: %d redis: %s", id, err)
-			err = nil
+		if reply, ok := conn.Get(key); ok {
+			data, _ = reply.([]byte)
 		}
-		if d, ok := reply.([]byte); ok && len(d) > 0 {
-			data = d
+		if data != nil && len(data) > 0 {
 			m = &dns.Msg{}
 			m.Unpack(data)
 			m.Id = id
 			err = w.WriteMsg(m)
 
 			if DEBUG > 0 {
-				log.Printf("id: %d redis: HIT %v\n", id, query)
+				log.Printf("id: %5d cache: HIT %v\n", id, query)
 			}
 
 			goto end
 		} else {
 			if DEBUG > 0 {
-				log.Printf("id: %d redis: MISS %v\n", id, query)
+				log.Printf("id: %5d cache: MISS %v\n", id, query)
 			}
 		}
 	}
@@ -163,13 +184,14 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		tried = i > 0
 		if DEBUG > 0 {
 			if tried {
-				log.Printf("id: %d try: %v %s\n", id, query, dns)
+				log.Printf("id: %5d try: %v %s\n", id, query, dns)
 			} else {
-				log.Printf("id: %d resolve: %v %s\n", id, query, dns)
+				log.Printf("id: %5d resolve: %v %s\n", id, query, dns)
 			}
 		}
 		m, _, err = client.Exchange(req, dns)
 		if err == nil && len(m.Answer) > 0 {
+			used = dns
 			break
 		}
 	}
@@ -178,9 +200,9 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		if DEBUG > 0 {
 			if tried {
 				if len(m.Answer) == 0 {
-					log.Printf("id: %d failed: %v\n", id, query)
+					log.Printf("id: %5d failed: %v\n", id, query)
 				} else {
-					log.Printf("id: %d bingo: %v %s\n", id, query, *dns2)
+					log.Printf("id: %5d bingo: %v %s\n", id, query, used)
 				}
 			}
 		}
@@ -192,14 +214,10 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 				if CACHE {
 					m.Id = 0
 					data, _ = m.Pack()
-					_, err = conn.Do("SETEX", key, *expire, data)
-					if err != nil {
-						log.Printf("id: %d redis: %s", id, err)
-						err = nil
-					}
+					conn.Set(key, data, 0)
 					m.Id = id
 					if DEBUG > 0 {
-						log.Printf("id: %d redis: CACHED %v\n", id, query)
+						log.Printf("id: %5d cache: CACHED %v\n", id, query)
 					}
 				}
 			}
@@ -214,12 +232,10 @@ end:
 		}
 	}
 	if err != nil {
-		log.Printf("id: %d error: %v %s\n", id, query, err)
+		log.Printf("id: %5d error: %v %s\n", id, query, err)
 	}
 
 	if DEBUG > 1 {
 		fmt.Println("====================================================")
 	}
-
-	conn.Close()
 }
