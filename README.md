@@ -24,10 +24,7 @@
 
 支持的参数：
 
-	dns1   = flag.String("dns1", "202.102.134.68:53", "remote dns address")
-	dns2   = flag.String("dns2", "202.102.128.68:53", "remote dns address")
-	dns3   = flag.String("dns3", "8.8.8.8:53", "remote dns address")
-	dns4   = flag.String("dns4", "8.8.4.4:53", "remote dns address")
+	dnss   = flag.String("dns", "192.168.2.1:53,8.8.8.8:53,8.8.4.4:53", "dns address, use `,` as sep")
 	local  = flag.String("local", ":53", "local listen address")
 	debug  = flag.Int("debug", 0, "debug level 0 1 2")
 	cache  = flag.Bool("cache", true, "enable go-cache")
@@ -39,9 +36,9 @@ build 生成 dnsproxy 文件后
 
     sudo ./dnsproxy
 
-dns1 dns2 是我当地的默认 dns 服务器，请换成你自己的。
+设置 dns 地址，使用 `,` 作分隔符
 
-    sudo ./dnsproxy -dns1=x.x.x.x -dns2=x.x.x.x
+    sudo ./dnsproxy -dns=x.x.x.x:53,x.x.x.x:53
 
 可以打印出 dns 查询日志
 

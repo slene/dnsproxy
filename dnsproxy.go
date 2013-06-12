@@ -8,20 +8,19 @@ import (
 	"github.com/miekg/dns"
 	goCache "github.com/pmylund/go-cache"
 	"log"
+	"net"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"runtime"
-	"time"
-	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 )
 
 var (
-	dns1   = flag.String("dns1", "202.102.134.68:53", "remote dns address")
-	dns2   = flag.String("dns2", "202.102.128.68:53", "remote dns address")
-	dns3   = flag.String("dns3", "8.8.8.8:53", "remote dns address")
-	dns4   = flag.String("dns4", "8.8.4.4:53", "remote dns address")
+	dnss   = flag.String("dns", "192.168.2.1:53,8.8.8.8:53,8.8.4.4:53", "dns address, use `,` as sep")
 	local  = flag.String("local", ":53", "local listen address")
 	debug  = flag.Int("debug", 0, "debug level 0 1 2")
 	cache  = flag.Bool("cache", true, "enable go-cache")
@@ -48,7 +47,7 @@ func toMd5(data string) string {
 }
 
 func intervalSaveCache() {
-	save := func(){
+	save := func() {
 		err := conn.SaveFile(*file)
 		if err == nil {
 			log.Printf("cache saved: %s\n", *file)
@@ -91,7 +90,21 @@ func init() {
 		intervalSaveCache()
 	}
 
-	DNS = []string{*dns1, *dns2, *dns3, *dns4}
+	for _, s := range strings.Split(*dnss, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		_, err := net.ResolveTCPAddr("tcp", s)
+		if err != nil {
+			log.Fatalf("wrong dns address %s\n", s)
+		}
+		DNS = append(DNS, s)
+	}
+
+	if len(DNS) == 0 {
+		log.Fatalln("dns address must be not empty")
+	}
 
 	signal.Notify(saveSig, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 }
