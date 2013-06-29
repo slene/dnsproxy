@@ -20,13 +20,14 @@ import (
 )
 
 var (
-	dnss   = flag.String("dns", "192.168.2.1:53,8.8.8.8:53,8.8.4.4:53", "dns address, use `,` as sep")
-	local  = flag.String("local", ":53", "local listen address")
-	debug  = flag.Int("debug", 0, "debug level 0 1 2")
-	cache  = flag.Bool("cache", true, "enable go-cache")
-	expire = flag.Int64("expire", 3600, "default cache expire time")
-	file   = flag.String("file", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "cached file")
-	ipv6   = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	dnss    = flag.String("dns", "192.168.2.1:53,8.8.8.8:53,8.8.4.4:53", "dns address, use `,` as sep")
+	local   = flag.String("local", ":53", "local listen address")
+	debug   = flag.Int("debug", 0, "debug level 0 1 2")
+	cache   = flag.Bool("cache", true, "enable go-cache")
+	expire  = flag.Int64("expire", 3600, "default cache expire time")
+	file    = flag.String("file", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "cached file")
+	ipv6    = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	timeout = flag.Int("timeout", 200, "read/write timeout")
 
 	client *dns.Client
 
@@ -81,8 +82,8 @@ func init() {
 
 	client = new(dns.Client)
 	client.Net = "tcp"
-	client.ReadTimeout = 100 * time.Millisecond
-	client.WriteTimeout = 100 * time.Millisecond
+	client.ReadTimeout = time.Duration(*timeout) * time.Millisecond
+	client.WriteTimeout = time.Duration(*timeout) * time.Millisecond
 
 	if CACHE {
 		conn = goCache.New(time.Second*time.Duration(*expire), time.Second*60)
