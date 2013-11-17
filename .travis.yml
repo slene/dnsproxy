@@ -1,0 +1,3 @@
+after_script:
+  - chmod 777 ./test.sh
+  - ./test.sh
