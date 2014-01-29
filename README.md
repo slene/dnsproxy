@@ -44,6 +44,5 @@ build 生成 dnsproxy 文件后
 
     sudo ./dnsproxy -debug=1
 
-
 ###Thanks
 部分代码源自 [这里](https://gist.github.com/mrluanma/3722792)
