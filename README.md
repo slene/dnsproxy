@@ -1,4 +1,4 @@
-##Proxy DNS query use TCP in go lang
+## Proxy DNS query use TCP in go lang
 
 苦于本地DNS污染，连github.com这种都经常解析不了。最近愈发频繁，所以写了这个程序。
 
@@ -20,7 +20,7 @@
 
 数台电脑，移动设备，平稳运行两天，正常解析。
 
-##使用方法
+## 使用方法
 
 支持的参数：
 
@@ -30,9 +30,15 @@
 	cache  = flag.Bool("cache", true, "enable go-cache")
 	expire = flag.Int64("expire", 3600, "default cache expire time")
 	ipv6   = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	hostfile = flag.String("hostfile", "_output/host-file.txt, "host file for dns result intercept & substitute")
 
-build 生成 dnsproxy 文件后
-执行：
+`make build` 生成 dnsproxy 文件后  
+
+> 如要使用hostfile内规则替换DNS响应结果，需手动将编辑好的hostfile文件放入`_output`目录下  
+
+`make run`运行
+
+手动执行：
 
     sudo ./dnsproxy
 
