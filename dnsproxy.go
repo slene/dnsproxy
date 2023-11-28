@@ -2,11 +2,10 @@ package main
 
 import (
 	"crypto/md5"
+	"dnsproxy/regex"
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/miekg/dns"
-	"github.com/pmylund/go-cache"
 	"log"
 	"net"
 	"os"
@@ -17,17 +16,21 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/miekg/dns"
+	"github.com/pmylund/go-cache"
 )
 
 var (
-	dnss    = flag.String("dns", "192.168.2.1:53:udp,8.8.8.8:53:udp,8.8.4.4:53:udp,8.8.8.8:53:tcp,8.8.4.4:53:tcp", "dns address, use `,` as sep")
-	local   = flag.String("local", ":53", "local listen address")
-	debug   = flag.Int("debug", 0, "debug level 0 1 2")
-	encache = flag.Bool("cache", true, "enable go-cache")
-	expire  = flag.Int64("expire", 3600, "default cache expire seconds, -1 means use doamin ttl time")
-	file    = flag.String("file", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "cached file")
-	ipv6    = flag.Bool("6", false, "skip ipv6 record query AAAA")
-	timeout = flag.Int("timeout", 200, "read/write timeout")
+	dnss     = flag.String("dns", "127.0.0.53:53:udp,127.0.0.53:53:tcp", "dns address, use `,` as sep")
+	local    = flag.String("local", "127.0.0.1:53", "local listen address")
+	debug    = flag.Int("debug", 0, "debug level 0 1 2")
+	encache  = flag.Bool("cache", true, "enable go-cache")
+	expire   = flag.Int64("expire", 3600, "default cache expire seconds, -1 means use doamin ttl time")
+	file     = flag.String("file", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "cached file")
+	ipv6     = flag.Bool("6", false, "skip ipv6 record query AAAA")
+	timeout  = flag.Int("timeout", 200, "read/write timeout")
+	hostfile = flag.String("hostfile", filepath.Join(path.Dir(os.Args[0]), "host-file.txt"), "hosts with wildcard")
 
 	clientTCP *dns.Client
 	clientUDP *dns.Client
@@ -125,6 +128,8 @@ func init() {
 		log.Fatalln("dns address must be not empty")
 	}
 
+	regex.Init(*hostfile)
+
 	signal.Notify(saveSig, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT)
 }
 
@@ -157,7 +162,14 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		query     []string
 		questions []dns.Question
 		used      string
+		reqName   string
 	)
+	if len(req.Question) > 0 {
+		for _, v := range req.Question {
+			// log.Printf("%s\t,Recv:%s", v.Name, v.String())
+			reqName = v.Name
+		}
+	}
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -192,6 +204,13 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 
 	if ENCACHE {
 		if reply, ok := conn.Get(key); ok {
+			if DEBUG > 1 {
+				if ok {
+					log.Printf("Cache find [%s]", questions[0].Name)
+				} else {
+					log.Printf("Cache MISS [%s]", questions[0].Name)
+				}
+			}
 			data, _ = reply.([]byte)
 		}
 		if data != nil && len(data) > 0 {
@@ -234,6 +253,8 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 		}
 	}
 
+	substituteResponse(reqName, m)
+
 	if err == nil {
 		if DEBUG > 0 {
 			if tried {
@@ -260,12 +281,17 @@ func proxyServe(w dns.ResponseWriter, req *dns.Msg) {
 						}
 					}
 					conn.Set(key, data, time.Second*time.Duration(ttl))
+					// log.Printf("Cache Set [%s]", questions[0].Name)
 					m.Id = id
 					if DEBUG > 0 {
 						log.Printf("id: %5d cache: CACHED %v TTL %v\n", id, query, ttl)
 					}
 				}
+			} else {
+				log.Printf("Response write fail [%s]", questions[0].Name)
 			}
+		} else {
+			log.Printf("Response pack fail [%s]", questions[0].Name)
 		}
 	}
 
@@ -283,4 +309,33 @@ end:
 	if DEBUG > 1 {
 		fmt.Println("====================================================")
 	}
+}
+
+func substituteResponse(reqName string, m *dns.Msg) error {
+	if regex.MappingTree == nil || len(reqName) < 1 {
+		return nil
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+	// log.Printf("Begin replace [%s]", reqName)
+	// Check if the last character is a period
+	reqName = strings.TrimSuffix(reqName, ".")
+
+	ip := regex.MappingTree.FindReverse(reqName)
+	if ip == "" {
+		// log.Printf(" --- Replace not Found [%s]", reqName)
+		return nil
+	}
+	log.Printf("Do replace [%s] with IP [%s]", reqName, ip)
+	newResponse, err := dns.NewRR(reqName + " 3600 IN A " + ip)
+	if err != nil {
+		log.Printf(" --- Replace ERROR [%s]", reqName)
+		return err
+	}
+	m.Answer = make([]dns.RR, 1)
+	m.Answer[0] = newResponse
+	return nil
 }
