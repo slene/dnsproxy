@@ -72,6 +72,22 @@ func TestFindTree(t *testing.T) {
 	}
 }
 
+func TestFindTree2(t *testing.T) {
+	hostfile := make(map[string]string)
+	hostfile["*akadns.net"] = "1.1.1.1"
+	hostfile["*docker_container_1"] = "2.2.2.2"
+
+	tree := regex.ConstructTreeReverse(hostfile)
+	res := tree.FindReverse("docker_container_1")
+	if res != hostfile["*docker_container_1"] {
+		t.Errorf("not match [%s]", res)
+	}
+	res = tree.FindReverse("r_1")
+	if res != "" {
+		t.Errorf("not match [%s]", res)
+	}
+}
+
 func TestFindTreeWithHostfile(t *testing.T) {
 	regex.Init("../host-file.txt")
 

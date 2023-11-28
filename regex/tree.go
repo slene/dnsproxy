@@ -139,7 +139,9 @@ func (t *Tree) FindReverse(domain string) (ip string) {
 		break
 	}
 	if matched {
-		return now.N.V
+		if now != nil && now.N != nil {
+			return now.N.V
+		}
 	}
 	return ""
 }
