@@ -9,20 +9,21 @@
 
 另有使用 redis 做缓存的版本在 redis-cache 分支
 
-依赖的两个库：
+Dependencies：
 
     go get github.com/miekg/dns
     go get github.com/pmylund/go-cache
 
-跨平台编译后放到了我的 arm 开发板 pcDuino 上，现在又可以作为 DNS服务器 了 ^_^
+跨平台编译后放到了我的 arm 开发板 pcDuino 上，现在又可以作为 DNS服务器 了 ^_^  
+Build for special platform:
 
     GOOS=linux GOARCH=arm go build src/dnsproxy.go
 
 数台电脑，移动设备，平稳运行两天，正常解析。
 
-## 使用方法
+## Using
 
-支持的参数：
+Supported arguments, all these could use as commandline flags like `-xxx=xxx`：
 
 	dnss   = flag.String("dns", "192.168.2.1:53,8.8.8.8:53,8.8.4.4:53", "dns address, use `,` as sep")
 	local  = flag.String("local", ":53", "local listen address")
@@ -32,23 +33,23 @@
 	ipv6   = flag.Bool("6", false, "skip ipv6 record query AAAA")
 	hostfile = flag.String("hostfile", "_output/host-file.txt, "host file for dns result intercept & substitute")
 
-`make build` 生成 dnsproxy 文件后  
+`make build` to build the executable file: `dnsproxy`
 
-> 如要使用hostfile内规则替换DNS响应结果，需手动将编辑好的hostfile文件放入`_output`目录下  
+> [New Feature] To replace DNS response results using rules defined in the hostfile, you need to manually place the edited hostfile into the _output directory.
 
-`make run`运行
+`make run` to run
 
-手动执行：
+Run manually：
 
     sudo ./dnsproxy
 
-设置 dns 地址，使用 `,` 作分隔符
+Set dns address，using `,` as the delimiter.
 
     sudo ./dnsproxy -dns=x.x.x.x:53,x.x.x.x:53
 
-可以打印出 dns 查询日志
+Using `-debug` flag could print the dns query log.
 
     sudo ./dnsproxy -debug=1
 
 ### Thanks
-部分代码源自 [这里](https://gist.github.com/mrluanma/3722792)
+Part of source code from [HERE](https://gist.github.com/mrluanma/3722792)
